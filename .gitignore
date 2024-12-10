@@ -1,7 +1,10 @@
-   # Ignore Python bytecode files
-   __pycache__/
-   *.py[cod]
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
 
-   # Ignore environment files
-   .env
-   .venv/
+# Ignore environment files
+.env
+.venv/
+
+# VS Code settings
+.vscode/
