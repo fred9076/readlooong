@@ -28,7 +28,7 @@ VOICE_CN = "zh-CN-XiaoxiaoNeural"
 VOICE_EN = "en-US-JennyNeural"
 
 # At the top of the file, initialize PaddleOCR (do this only once)
-ocr_chi_eng = PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False, show_log=False)
+ocr_chi_eng = PaddleOCR(use_angle_cls=True, lang='ch', use_gpu=False, show_log=False, use_space_char=True)
 
 # Commands
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -76,7 +76,7 @@ def clean_eng_ocr_text(text: str) -> str:
 def is_chinese(text: str) -> bool:
     """Check if the text contains Chinese characters more than 50%."""
     chinese_chars = sum('\u4e00' <= char <= '\u9fff' for char in text)
-    return chinese_chars > len(text) * 0.5
+    return chinese_chars > len(text) * 0.9
 
 
 
@@ -104,13 +104,14 @@ def photo_to_text(photo) -> str:
         if is_chinese(full_text):
             # Extract text from PaddleOCR result            
             os.remove(temp_image_path)
-            cleaned_text = clean_chi_ocr_text(full_text)
+            # cleaned_text = clean_chi_ocr_text(full_text)
+            cleaned_text = full_text
         else:
             print('English only detected, using pytesseract')
             full_text = pytesseract.image_to_string(image)
             os.remove(temp_image_path)
-            cleaned_text = clean_eng_ocr_text(full_text)
-        
+            # cleaned_text = clean_eng_ocr_text(full_text)
+            cleaned_text = full_text
         return cleaned_text.strip() if cleaned_text.strip() else ''
         
     except Exception as e:
