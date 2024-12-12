@@ -8,7 +8,7 @@ load_dotenv()
 
 # Bot Configuration
 TOKEN: Final = os.getenv('TELEGRAM_BOT_TOKEN')
-BOT_USERNAME: Final = '@readlooong_bot'
+BOT_USERNAME: Final = os.getenv('BOT_NAME')
 
 # Get language config
 selected_language = os.getenv('LANGUAGE', 'zh')
