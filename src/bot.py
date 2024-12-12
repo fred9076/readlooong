@@ -60,8 +60,9 @@ class TelegramBot:
                     if not message or not message.strip():
                         continue
                         
-                    # Remove "Caption: " prefix if present
-                    text = message[8:] if message.startswith('Caption: ') else message
+                    # Remove "Caption: " and "OCR: " prefixes if present
+                    text = message[8:] if message.startswith('Caption: ') else \
+                           message[5:] if message.startswith('OCR: ') else message
                     
                     # Skip if message is too long
                     if len(text) > MAX_BUFFER_SIZE:
@@ -173,27 +174,30 @@ class TelegramBot:
         chat_id = update.message.chat.id
 
         if text:
+            # Handle text messages
             return text.replace(BOT_USERNAME, '').strip() if message_type == 'group' else text
         elif photo:
-            # Check if any message in the buffer has a caption
-            has_caption_in_buffer = any(
-                msg.startswith('Caption: ') 
-                for msg in self.message_buffer[chat_id]
-            )
-            
             if caption:
-                # Store captions with a prefix to identify them later
+                # If photo has caption, use the caption
                 print('Using caption:', caption)
                 return f'Caption: {caption}'
-            elif has_caption_in_buffer:
-                # Skip OCR if there's a caption in the buffer
-                print('Skipping OCR due to caption in buffer')
-                return None
             else:
-                # Only do OCR if no captions found
-                await update.message.reply_text('Converting image to text...')
-                photo_bytes = await self.download_photo(photo)
-                return self.ocr_processor.process_image(photo_bytes)
+                # Check if there are any text or caption messages in the buffer
+                has_text_in_buffer = any(
+                    not msg.startswith('OCR: ') 
+                    for msg in self.message_buffer[chat_id]
+                )
+                
+                if has_text_in_buffer:
+                    # Skip OCR if there's any text/caption in buffer
+                    print('Skipping OCR due to text/caption in buffer')
+                    return None
+                else:
+                    # Only perform OCR if all messages are images without text
+                    await update.message.reply_text('Converting image to text...')
+                    photo_bytes = await self.download_photo(photo)
+                    ocr_text = self.ocr_processor.process_image(photo_bytes)
+                    return f'OCR: {ocr_text}' if ocr_text else None
         return None
 
     async def _delayed_process(self, update: Update, chat_id: int, current_batch_time: datetime):
