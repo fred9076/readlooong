@@ -111,7 +111,7 @@ class TelegramBot:
                 print('Caption:', caption)
                 return caption
             else:
-                await update.message.reply_text('Converting to text...')
+                await update.message.reply_text('Converting image to text...')
                 photo_bytes = await self.download_photo(photo)
                 return self.ocr_processor.process_image(photo_bytes)
         return None
