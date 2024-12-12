@@ -1,7 +1,7 @@
 import os
 import tempfile
 import edge_tts
-from .settings import VOICE
+from .config import VOICE
 from .utils import create_safe_filename
 
 async def convert_to_audio(text: str) -> tuple[bool, str]:

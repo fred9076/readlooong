@@ -3,7 +3,7 @@ import os
 import tempfile
 from PIL import Image
 from paddleocr import PaddleOCR
-from .settings import OCR_LANG
+from .config import OCR_LANG
 from .utils import is_chinese
 
 class OCRProcessor:

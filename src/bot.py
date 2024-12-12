@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 
-from .settings import (
+from .config import (
     TOKEN, BOT_USERNAME, MESSAGE_TIMEOUT, 
     MAX_BUFFER_SIZE, MAX_PROCESSING_TIME
 )
@@ -14,9 +14,19 @@ from .text_to_speech import convert_to_audio
 
 class TelegramBot:
     def __init__(self):
+        print('Initializing bot...')
+        # Clear any existing buffers
         self.message_buffer = defaultdict(list)
         self.last_message_time = defaultdict(datetime.now)
         self.ocr_processor = OCRProcessor()
+        self.processing_locks = defaultdict(asyncio.Lock)  # Add lock per chat
+        self._cleanup_buffers()
+
+    def _cleanup_buffers(self):
+        """Clean up all message buffers and timestamps."""
+        self.message_buffer.clear()
+        self.last_message_time.clear()
+        print('Message buffers cleared')
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
@@ -37,30 +47,63 @@ class TelegramBot:
     async def process_accumulated_messages(self, update: Update, chat_id: int):
         if not self.message_buffer[chat_id]:
             return
-            
-        combined_text = "\n\n".join(self.message_buffer[chat_id])
-        if len(combined_text) > MAX_BUFFER_SIZE:
-            await update.message.reply_text("Message too long. Processing current buffer...")
         
-        await update.message.reply_text("Converting following text to audio:\n\n" + combined_text)
-        
-        start_time = datetime.now()
-        success, result = await convert_to_audio(combined_text)
-        
-        processing_time = (datetime.now() - start_time).total_seconds()
-        if processing_time > MAX_PROCESSING_TIME:
-            print(f"Warning: Processing took {processing_time} seconds")
-            
-        self.message_buffer[chat_id].clear()
-        
-        if success:
+        # Prevent multiple simultaneous processing for same chat
+        async with self.processing_locks[chat_id]:
             try:
-                await update.message.reply_audio(audio=open(result, 'rb'))
-            finally:
-                if os.path.exists(result):
-                    os.remove(result)
-        else:
-            await update.message.reply_text(result)
+                messages_to_process = self.message_buffer[chat_id].copy()
+                self.message_buffer[chat_id].clear()  # Clear buffer early
+                
+                # Process each message separately
+                for message in messages_to_process:
+                    # Skip empty messages
+                    if not message or not message.strip():
+                        continue
+                        
+                    # Remove "Caption: " prefix if present
+                    text = message[8:] if message.startswith('Caption: ') else message
+                    
+                    # Skip if message is too long
+                    if len(text) > MAX_BUFFER_SIZE:
+                        await update.message.reply_text(f"Skipping message - too long ({len(text)} characters)")
+                        continue
+                    
+                    try:
+                        # Send preview for this message
+                        preview = text[:1000] + "..." if len(text) > 1000 else text
+                        await update.message.reply_text(
+                            "📝 Converting to audio:\n\n"
+                            f"{preview}\n\n"
+                            f"Length: {len(text)} characters"
+                        )
+                        
+                        # Convert and send audio with timeout
+                        try:
+                            success, result = await asyncio.wait_for(
+                                convert_to_audio(text), 
+                                timeout=MAX_PROCESSING_TIME
+                            )
+                            
+                            if success:
+                                try:
+                                    await update.message.reply_audio(audio=open(result, 'rb'))
+                                finally:
+                                    if os.path.exists(result):
+                                        os.remove(result)
+                            else:
+                                await update.message.reply_text(f"Error converting message: {result}")
+                    
+                        except asyncio.TimeoutError:
+                            await update.message.reply_text("Message processing took too long, skipping...")
+                            continue
+                    except Exception as e:
+                        print(f"Error processing message: {str(e)}")
+                        await update.message.reply_text("Error processing this message, skipping...")
+                        continue
+                    
+            except Exception as e:
+                print(f"Error processing messages: {str(e)}")
+                await update.message.reply_text("Sorry, there was an error processing your messages.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Main message handler for both text and photos."""
@@ -70,14 +113,26 @@ class TelegramBot:
         caption: str = update.message.caption
         chat_id = update.message.chat.id
 
-        print(f'User ({chat_id}) says: "{text}" in {message_type}')
-        
+        # Debug logging
+        print(f'User ({chat_id}) in {message_type}:', end=' ')
+        if text:
+            print(f'text: "{text}"')
+        elif photo:
+            print(f'photo with caption: "{caption}"' if caption else 'photo without caption')
+
         current_time = datetime.now()
         time_diff = (current_time - self.last_message_time[chat_id]).total_seconds()
         self.last_message_time[chat_id] = current_time
 
         try:
+            # Skip if group message without mention
             if message_type == 'group' and (not text or BOT_USERNAME not in text):
+                return
+
+            # Check if buffer is getting too large
+            if len(self.message_buffer[chat_id]) >= 10:  # Limit to 10 messages
+                await update.message.reply_text("Too many pending messages. Processing current buffer...")
+                await self.process_accumulated_messages(update, chat_id)
                 return
 
             content = await self._handle_content(update)
@@ -85,12 +140,24 @@ class TelegramBot:
                 if len(content) > MAX_BUFFER_SIZE:
                     await update.message.reply_text("Message too long. Please send a shorter message.")
                     return
+            
+                print(f'Adding to buffer: "{content[:50]}..."')
                 self.message_buffer[chat_id].append(content)
 
-            if time_diff > MESSAGE_TIMEOUT or '!read' in str(content).lower():
-                await self.process_accumulated_messages(update, chat_id)
-            elif len(self.message_buffer[chat_id]) == 1:
-                asyncio.create_task(self._delayed_process(update, chat_id, current_time))
+                # Always schedule/reschedule delayed processing
+                if time_diff > MESSAGE_TIMEOUT or '!read' in str(content).lower():
+                    # Process immediately if timeout exceeded or forced
+                    await self.process_accumulated_messages(update, chat_id)
+                else:
+                    # Cancel any existing delayed task
+                    if hasattr(self, f'delayed_task_{chat_id}'):
+                        task = getattr(self, f'delayed_task_{chat_id}')
+                        if not task.done():
+                            task.cancel()
+                    
+                    # Schedule new delayed processing
+                    task = asyncio.create_task(self._delayed_process(update, chat_id, current_time))
+                    setattr(self, f'delayed_task_{chat_id}', task)
 
         except Exception as e:
             print(f"Error processing message: {str(e)}")
@@ -103,14 +170,27 @@ class TelegramBot:
         photo = update.message.photo[-1] if update.message.photo else None
         caption = update.message.caption
         message_type = update.message.chat.type
+        chat_id = update.message.chat.id
 
         if text:
             return text.replace(BOT_USERNAME, '').strip() if message_type == 'group' else text
         elif photo:
+            # Check if any message in the buffer has a caption
+            has_caption_in_buffer = any(
+                msg.startswith('Caption: ') 
+                for msg in self.message_buffer[chat_id]
+            )
+            
             if caption:
-                print('Caption:', caption)
-                return caption
+                # Store captions with a prefix to identify them later
+                print('Using caption:', caption)
+                return f'Caption: {caption}'
+            elif has_caption_in_buffer:
+                # Skip OCR if there's a caption in the buffer
+                print('Skipping OCR due to caption in buffer')
+                return None
             else:
+                # Only do OCR if no captions found
                 await update.message.reply_text('Converting image to text...')
                 photo_bytes = await self.download_photo(photo)
                 return self.ocr_processor.process_image(photo_bytes)

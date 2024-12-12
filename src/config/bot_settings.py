@@ -1,7 +1,7 @@
 from typing import Final
 import os
 from dotenv import load_dotenv
-from .config.lang_voice import LANG_VOICE_CONFIGS
+from .lang_voice import LANG_VOICE_CONFIGS
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +19,6 @@ VOICE = language_config['voice']
 OCR_LANG = language_config['ocr_lang']
 
 # Message Processing
-MESSAGE_TIMEOUT = 10  # seconds to wait for additional messages
-MAX_BUFFER_SIZE = 1000000  # maximum characters in buffer
-MAX_PROCESSING_TIME = 30  # maximum seconds to process audio
+MESSAGE_TIMEOUT = 1  # seconds to wait for additional messages
+MAX_BUFFER_SIZE = 400000  # maximum characters in buffer
+MAX_PROCESSING_TIME = 60  # maximum seconds to process audio 
