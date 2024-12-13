@@ -11,6 +11,7 @@ from .config import (
 )
 from .ocr import OCRProcessor
 from .text_to_speech import convert_to_audio
+from .link import LinkProcessor
 
 class TelegramBot:
     def __init__(self):
@@ -20,6 +21,7 @@ class TelegramBot:
         self.last_message_time = defaultdict(datetime.now)
         self.ocr_processor = OCRProcessor()
         self.processing_locks = defaultdict(asyncio.Lock)  # Add lock per chat
+        self.link_processor = LinkProcessor()
         self._cleanup_buffers()
 
     def _cleanup_buffers(self):
@@ -61,8 +63,10 @@ class TelegramBot:
                         continue
                         
                     # Remove "Caption: " and "OCR: " prefixes if present
-                    text = message[8:] if message.startswith('Caption: ') else \
-                           message[5:] if message.startswith('OCR: ') else message
+                    text = (message[8:] if message.startswith('Caption: ') else
+                            message[5:] if message.startswith('OCR: ') else
+                            message[6:] if message.startswith('Link: ') else
+                            message)
                     
                     # Skip if message is too long
                     if len(text) > MAX_BUFFER_SIZE:
@@ -170,11 +174,36 @@ class TelegramBot:
         text = update.message.text
         photo = update.message.photo[-1] if update.message.photo else None
         caption = update.message.caption
+        entities = update.message.entities  # Get message entities
         message_type = update.message.chat.type
         chat_id = update.message.chat.id
 
+        # Check for URL entities first
+        if text and entities and any(entity.type == "url" for entity in entities):
+            # Check if there are any text messages in the buffer
+            has_text_in_buffer = any(
+                not (msg.startswith('OCR: ') or msg.startswith('Link: ') or msg.startswith('Caption: '))
+                for msg in self.message_buffer[chat_id]
+            )
+            
+            if has_text_in_buffer:
+                # Skip link processing if there's text in buffer
+                print('Skipping link processing due to text in buffer')
+                return None
+            
+            for entity in entities:
+                if entity.type == "url":
+                    url = text[entity.offset:entity.offset + entity.length]
+                    await update.message.reply_text('Extracting text from link...')
+                    link_text = await self.link_processor.process_link(url)
+                    if link_text:
+                        return f'Link: {link_text}'
+                    else:
+                        await update.message.reply_text("Couldn't extract text from this link.")
+                        return None
+
         if text:
-            # Handle text messages
+            # Handle regular text messages
             return text.replace(BOT_USERNAME, '').strip() if message_type == 'group' else text
         elif photo:
             if caption:
@@ -207,6 +236,7 @@ class TelegramBot:
 
     async def error(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f'Update {update} caused error {context.error}')
+        await self.link_processor.close()
 
     def run(self):
         """Start the bot."""
