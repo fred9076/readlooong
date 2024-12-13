@@ -105,10 +105,11 @@ class LinkProcessor:
         lines = [line for line in lines if not (
             line.startswith('URL Source:') or 
             line.startswith('Published Time:') or
-            line.startswith('Markdown Content:')
+            line.startswith('Markdown Content:') or
+            line.strip().startswith('*   [')  # Remove list items with links
         )]
         text = '\n'.join(lines)
-        print("Step 1: Removed metadata lines")
+        print("Step 1: Removed metadata and list lines")
         
         try:
             # Convert markdown to HTML
