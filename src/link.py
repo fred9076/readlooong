@@ -100,16 +100,17 @@ class LinkProcessor:
         
         print("\n=== Debug: Text cleaning steps ===")
         
-        # Remove metadata lines first
+        # Remove metadata lines and specific content
         lines = text.split('\n')
         lines = [line for line in lines if not (
             line.startswith('URL Source:') or 
             line.startswith('Published Time:') or
             line.startswith('Markdown Content:') or
-            line.strip().startswith('*   [')  # Remove list items with links
+            line.strip().startswith('*   [') or  # Remove list items with links
+            '频道' in line  # Remove lines containing '频道'
         )]
         text = '\n'.join(lines)
-        print("Step 1: Removed metadata and list lines")
+        print("Step 1: Removed metadata, list lines, and lines with '频道'")
         
         try:
             # Convert markdown to HTML
@@ -142,3 +143,32 @@ class LinkProcessor:
     def is_valid_url(self, url: str) -> bool:
         """Basic URL validation."""
         return url.startswith(('http://', 'https://'))
+
+def process_message(message):
+    # existing code...
+    
+    # Check if message contains OCR or links
+    has_ocr_or_link = any(
+        text.get('ocr') or text.get('link') 
+        for text in accumulated_message
+    )
+    
+    if not has_ocr_or_link:
+        # Combine all text into a single string
+        combined_text = ' '.join(
+            text.get('text', '') 
+            for text in accumulated_message
+        )
+        
+        # Create single audio file for combined text
+        if combined_text:
+            audio_file = text_to_speech(combined_text)
+            audio_files.append(audio_file)
+    else:
+        # Original logic for processing individual messages
+        for text in accumulated_message:
+            if text.get('text'):
+                audio_file = text_to_speech(text['text'])
+                audio_files.append(audio_file)
+    
+    # Rest of the existing code...
