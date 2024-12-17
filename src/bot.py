@@ -56,36 +56,36 @@ class TelegramBot:
                 messages_to_process = self.message_buffer[chat_id].copy()
                 self.message_buffer[chat_id].clear()  # Clear buffer early
                 
-                # Process each message separately
-                for message in messages_to_process:
-                    # Skip empty messages
-                    if not message or not message.strip():
-                        continue
-                        
-                    # Remove "Caption: " and "OCR: " prefixes if present
-                    text = (message[8:] if message.startswith('Caption: ') else
-                            message[5:] if message.startswith('OCR: ') else
-                            message[6:] if message.startswith('Link: ') else
-                            message)
+                # Check if messages contain OCR or links (but not captions)
+                has_ocr_or_link = any(
+                    msg.startswith(('OCR: ', 'Link: '))
+                    for msg in messages_to_process
+                )
+                
+                if not has_ocr_or_link:
+                    # Combine all text and caption messages into one
+                    combined_text = ' '.join(
+                        (msg[8:] if msg.startswith('Caption: ') else msg)
+                        for msg in messages_to_process 
+                        if msg and msg.strip()
+                    )
                     
-                    # Skip if message is too long
-                    if len(text) > MAX_BUFFER_SIZE:
-                        await update.message.reply_text(f"Skipping message - too long ({len(text)} characters)")
-                        continue
-                    
-                    try:
-                        # Send preview for this message
-                        preview = text[:1000] + "..." if len(text) > 1000 else text
+                    if combined_text:
+                        # Send preview for combined message
+                        preview = combined_text[:1000] + "..." if len(combined_text) > 1000 else combined_text
                         await update.message.reply_text(
-                            "📝 Converting to audio:\n\n"
+                            "📝 Converting combined text to audio:\n\n"
                             f"{preview}\n\n"
-                            f"Length: {len(text)} characters"
+                            f"Length: {len(combined_text)} characters"
                         )
                         
-                        # Convert and send audio with timeout
+                        # Send "Converting!!" message
+                        converting_msg = await update.message.reply_text("Converting!! 🎯")
+                        
+                        # Convert and send single audio
                         try:
                             success, result = await asyncio.wait_for(
-                                convert_to_audio(text), 
+                                convert_to_audio(combined_text),
                                 timeout=MAX_PROCESSING_TIME
                             )
                             
@@ -95,17 +95,71 @@ class TelegramBot:
                                 finally:
                                     if os.path.exists(result):
                                         os.remove(result)
+                                    # Delete the "Converting!!" message after completion
+                                    await converting_msg.delete()
                             else:
                                 await update.message.reply_text(f"Error converting message: {result}")
-                    
+                                await converting_msg.delete()
+                        
                         except asyncio.TimeoutError:
                             await update.message.reply_text("Message processing took too long, skipping...")
+                            await converting_msg.delete()
+                else:
+                    # Original logic for processing individual messages
+                    for message in messages_to_process:
+                        # Skip empty messages
+                        if not message or not message.strip():
                             continue
-                    except Exception as e:
-                        print(f"Error processing message: {str(e)}")
-                        await update.message.reply_text("Error processing this message, skipping...")
-                        continue
-                    
+                            
+                        text = (message[8:] if message.startswith('Caption: ') else
+                                message[5:] if message.startswith('OCR: ') else
+                                message[6:] if message.startswith('Link: ') else
+                                message)
+                        
+                        if len(text) > MAX_BUFFER_SIZE:
+                            await update.message.reply_text(f"Skipping message - too long ({len(text)} characters)")
+                            continue
+                        
+                        try:
+                            preview = text[:1000] + "..." if len(text) > 1000 else text
+                            await update.message.reply_text(
+                                "📝 Converting to audio:\n\n"
+                                f"{preview}\n\n"
+                                f"Length: {len(text)} characters"
+                            )
+                            
+                            # Send "Converting!!" message
+                            converting_msg = await update.message.reply_text("Converting!! 🎯")
+                            
+                            try:
+                                success, result = await asyncio.wait_for(
+                                    convert_to_audio(text), 
+                                    timeout=MAX_PROCESSING_TIME
+                                )
+                                
+                                if success:
+                                    try:
+                                        await update.message.reply_audio(audio=open(result, 'rb'))
+                                    finally:
+                                        if os.path.exists(result):
+                                            os.remove(result)
+                                        # Delete the "Converting!!" message after completion
+                                        await converting_msg.delete()
+                                else:
+                                    await update.message.reply_text(f"Error converting message: {result}")
+                                    await converting_msg.delete()
+                            
+                            except asyncio.TimeoutError:
+                                await update.message.reply_text("Message processing took too long, skipping...")
+                                await converting_msg.delete()
+                                continue
+                        except Exception as e:
+                            print(f"Error processing message: {str(e)}")
+                            await update.message.reply_text("Error processing this message, skipping...")
+                            if 'converting_msg' in locals():
+                                await converting_msg.delete()
+                            continue
+                        
             except Exception as e:
                 print(f"Error processing messages: {str(e)}")
                 await update.message.reply_text("Sorry, there was an error processing your messages.")
