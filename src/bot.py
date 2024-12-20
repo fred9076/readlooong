@@ -228,26 +228,58 @@ class TelegramBot:
                         url = text[entity.offset:entity.offset + entity.length]
                         urls.append(url)
             
-            # Also try to find URLs in plain text
             if not urls:
                 url_pattern = r'https?://\S+'
-                import re
                 urls = re.findall(url_pattern, text)
 
             if urls:
-                combined_text = []
                 for url in urls:
+                    # Check if it's a video URL
+                    if self.link_processor.video_processor.is_supported_url(url):
+                        status_msg = await update.message.reply_text(f'🎥 Processing video: {url}')
+                        try:
+                            success, result = await self.link_processor.video_processor.extract_audio(url)
+                            if success:
+                                try:
+                                    await status_msg.edit_text("⏳ Sending audio file...")
+                                    await update.message.reply_audio(
+                                        audio=open(result, 'rb'),
+                                        caption=f"Audio extracted from video",
+                                        filename=f"audio_{os.path.basename(result)}"
+                                    )
+                                except Exception as e:
+                                    await update.message.reply_text(
+                                        f"❌ Error sending audio: {str(e)}\n"
+                                        f"This might be because the file is too large or in an unsupported format."
+                                    )
+                                finally:
+                                    # Clean up the temporary files
+                                    if os.path.exists(result):
+                                        try:
+                                            os.remove(result)
+                                            os.rmdir(os.path.dirname(result))
+                                        except Exception as cleanup_error:
+                                            print(f"Cleanup error: {cleanup_error}")
+                            else:
+                                await update.message.reply_text(
+                                    f"❌ Failed to extract audio:\n{result}\n\n"
+                                    f"Please make sure the video is accessible and not private/restricted."
+                                )
+                        except Exception as e:
+                            await update.message.reply_text(
+                                f"❌ Unexpected error while processing video:\n{str(e)}"
+                            )
+                        finally:
+                            await status_msg.delete()
+                        return None
+
+                    # Process as regular link
                     await update.message.reply_text(f'📄 Extracting text from: {url}')
                     link_text = await self.link_processor.process_link(url)
                     if link_text:
-                        # Don't clean link text, just append it directly
-                        combined_text.append(link_text)
+                        return "Link: " + link_text
                     else:
                         await update.message.reply_text("❌ Couldn't extract text from this link.")
-                
-                if combined_text:
-                    # Return link text without additional cleaning
-                    return "Link: " + "\n\n".join(combined_text)
                 return None
 
             # For regular text, apply cleaning

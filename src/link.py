@@ -3,25 +3,23 @@ from typing import Optional
 import aiohttp
 from trafilatura import fetch_url, extract
 import re
+from urllib.parse import urlparse, parse_qs
+from .video import VideoProcessor
 
 class LinkProcessor:
     def __init__(self):
         """Initialize the LinkProcessor."""
         self.session = None
+        self.video_processor = VideoProcessor()
 
-    async def ensure_session(self):
-        """Ensure aiohttp session exists."""
-        if self.session is None:
-            self.session = aiohttp.ClientSession()
-
-    async def close(self):
-        """Close the aiohttp session."""
-        if self.session:
-            await self.session.close()
-            self.session = None
+    def is_youtube_url(self, url: str) -> bool:
+        """Check if the URL is a YouTube URL."""
+        parsed_url = urlparse(url)
+        return any(domain in parsed_url.netloc 
+                  for domain in ['youtube.com', 'youtu.be', 'www.youtube.com'])
 
     async def process_link(self, url: str) -> Optional[str]:
-        """Process a URL and extract text content using Trafilatura."""
+        """Process a URL and extract text content."""
         try:
             if not self.is_valid_url(url):
                 print(f"Invalid URL format: {url}")
@@ -29,7 +27,26 @@ class LinkProcessor:
 
             print(f"Fetching content from: {url}")
             
-            # Use trafilatura to fetch and extract content
+            # Check if it's a video URL
+            if self.video_processor.is_supported_url(url):
+                print("Video URL detected - extracting metadata")
+                metadata = await self.video_processor.process_video(url)
+                if metadata:
+                    # Return formatted video metadata as text
+                    return (
+                        f"Video: {metadata['title']}\n\n"
+                        f"By: {metadata['uploader']}\n"
+                        f"Duration: {metadata['duration']} seconds\n\n"
+                        f"Description:\n{metadata['description']}"
+                    )
+                return None
+
+            # Check if it's a YouTube URL
+            if self.is_youtube_url(url):
+                print("YouTube URL detected - please use YouTubeProcessor instead")
+                return None
+            
+            # Use trafilatura to fetch and extract content for non-YouTube URLs
             downloaded = fetch_url(url)
             if not downloaded:
                 print(f"Failed to fetch content from {url}")
