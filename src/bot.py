@@ -9,7 +9,7 @@ import tempfile
 
 from .config import (
     TOKEN, BOT_USERNAME, MESSAGE_TIMEOUT, 
-    MAX_BUFFER_SIZE, MAX_PROCESSING_TIME
+    MAX_BUFFER_SIZE, MAX_PROCESSING_TIME,
 )
 from .ocr import OCRProcessor
 from .text_to_speech import convert_to_audio
