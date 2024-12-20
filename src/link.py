@@ -1,9 +1,8 @@
 import asyncio
 from typing import Optional
 import aiohttp
+from trafilatura import fetch_url, extract
 import re
-from bs4 import BeautifulSoup
-from markdown import markdown
 
 class LinkProcessor:
     def __init__(self):
@@ -22,69 +21,45 @@ class LinkProcessor:
             self.session = None
 
     async def process_link(self, url: str) -> Optional[str]:
-        """Process a URL and extract text content using Jina Reader API."""
+        """Process a URL and extract text content using Trafilatura."""
         try:
-            await self.ensure_session()
-            
-            # Create the Jina Reader URL
-            reader_url = f'https://r.jina.ai/{url}'
-            print(f"Fetching content from: {reader_url}")
-            
-            # Get the content using Jina Reader
-            async with self.session.get(reader_url) as response:
-                if response.status != 200:
-                    print(f"Error from Reader API: {response.status}")
-                    return None
-                
-                # Get raw response text first
-                print("\n=== Debug: Getting raw response ===")
-                raw_text = await response.text()
-                print(f"Response type: {type(raw_text)}")
-                print(f"Response length: {len(raw_text)}")
-                print(f"First 100 chars: {raw_text[:100]}")
-                
-                # Try to parse as JSON
-                try:
-                    print("\n=== Debug: Attempting JSON parse ===")
-                    import json
-                    data = json.loads(raw_text)
-                    print(f"Parsed JSON type: {type(data)}")
-                    if isinstance(data, dict):
-                        print("Data is dictionary")
-                        print(f"Available keys: {data.keys()}")
-                        extracted_text = data.get('text', raw_text)
-                    else:
-                        print(f"Data is not dictionary, type: {type(data)}")
-                        extracted_text = raw_text
-                except json.JSONDecodeError as e:
-                    print(f"JSON parse failed: {str(e)}")
-                    extracted_text = raw_text
-                except Exception as e:
-                    print(f"Unexpected error during JSON handling: {str(e)}")
-                    extracted_text = raw_text
-                
-                if not extracted_text:
-                    print(f"No text content extracted from {url}")
-                    return None
+            if not self.is_valid_url(url):
+                print(f"Invalid URL format: {url}")
+                return None
 
-                print("\n=== Original Text ===")
-                print(extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text)
-                
-                # Clean and format the extracted text
-                try:
-                    print("\n=== Debug: Starting text cleaning ===")
-                    cleaned_text = self._clean_text(extracted_text)
-                    print("Text cleaning completed")
-                except Exception as e:
-                    print(f"Error during text cleaning: {str(e)}")
-                    return None
-                
-                print("\n=== Cleaned Text ===")
-                print(cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text)
-                print("===================\n")
-                
-                print(f"Successfully extracted text from {url}")
-                return cleaned_text
+            print(f"Fetching content from: {url}")
+            
+            # Use trafilatura to fetch and extract content
+            downloaded = fetch_url(url)
+            if not downloaded:
+                print(f"Failed to fetch content from {url}")
+                return None
+            
+            # Extract main content with metadata
+            extracted_text = extract(downloaded, 
+                                  include_links=False,
+                                  include_images=False,
+                                  include_tables=True,
+                                  include_comments=False,
+                                  output_format='txt',
+                                  with_metadata=False)
+            
+            if not extracted_text:
+                print(f"No text content extracted from {url}")
+                return None
+
+            print("\n=== Original Text ===")
+            print(extracted_text[:500] + "..." if len(extracted_text) > 500 else extracted_text)
+            
+            # Clean the extracted text
+            cleaned_text = self._clean_text(extracted_text)
+            
+            print("\n=== Cleaned Text ===")
+            print(cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text)
+            print("===================\n")
+            
+            print(f"Successfully extracted text from {url}")
+            return cleaned_text
 
         except Exception as e:
             print(f"Error processing link {url}: {str(e)}")
@@ -94,81 +69,63 @@ class LinkProcessor:
             return None
 
     def _clean_text(self, text: str) -> str:
-        """Clean and format the extracted text using BeautifulSoup."""
-        if not text:
-            return ""
+        """
+        Clean the extracted text.
+        1. Remove citations patterns like [1] [ 2] [3  ]
+        2. Remove citation objects like ^ "Order of..."
+        3. Remove tables (including markdown tables and their headers)
+        4. Remove [edit] tags and reference lines
+        5. Remove numbered references like ^ 1.0 1.1 1.2 and their content
+        """
+        # Remove citation patterns with brackets
+        cleaned_text = re.sub(r'\[\s*\d+\s*\]', '', text)
+        cleaned_text = re.sub(r'\[edit\]', '', cleaned_text)
         
-        print("\n=== Debug: Text cleaning steps ===")
+        # Split into lines and filter
+        lines = cleaned_text.split('\n')
         
-        # Remove metadata lines and specific content
-        lines = text.split('\n')
-        lines = [line for line in lines if not (
-            line.startswith('URL Source:') or 
-            line.startswith('Published Time:') or
-            line.startswith('Markdown Content:') or
-            line.strip().startswith('*   [') or  # Remove list items with links
-            '频道' in line  # Remove lines containing '频道'
-        )]
-        text = '\n'.join(lines)
-        print("Step 1: Removed metadata, list lines, and lines with '频道'")
+        # Keep lines that don't match any of these patterns
+        lines = [line for line in lines 
+                if not (
+                    # Remove citation objects (lines starting with ^)
+                    line.strip().startswith('^') or
+                    # Remove numbered references with their content
+                    re.match(r'^\s*\^?\s*\d+(\.\d+)*\s+.*$', line.strip()) or
+                    # Remove lines with pipe symbols (markdown tables)
+                    '|' in line or
+                    # Remove horizontal separators
+                    re.match(r'^\s*[-=+]+\s*$', line) or
+                    # Remove lines that are part of table formatting
+                    re.search(r'[-+|]\s*[-+|]', line) or
+                    # Remove reference lines starting with -
+                    line.strip().startswith('- ^') or
+                    # Remove lines that are just "Notes:" or "See also" or "References"
+                    re.match(r'^\s*(Notes:|See also|References)\s*$', line) or
+                    # Remove citation help text
+                    '{{cite' in line or 'ignored' in line
+                )]
         
-        try:
-            # Convert markdown to HTML
-            html = markdown(text)
-            
-            # Remove code blocks
-            html = re.sub(r'<pre>(.*?)</pre>', ' ', html)
-            html = re.sub(r'<code>(.*?)</code >', ' ', html)
-            
-            # Parse HTML and extract text
-            soup = BeautifulSoup(html, "html.parser")
-            cleaned_text = ' '.join(soup.findAll(text=True))
-            
-            # Clean up whitespace
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
-            
-            # Split into paragraphs
-            paragraphs = [p.strip() for p in cleaned_text.split('\n') if p.strip()]
-            cleaned_text = '\n\n'.join(paragraphs)
-            
-            return cleaned_text
-
-        except Exception as e:
-            print(f"Error in text cleaning: {str(e)}")
-            print(f"Current text: {text[:200]}...")
-            import traceback
-            traceback.print_exc()
-            return text  # Return original text if cleaning fails
+        cleaned_text = '\n'.join(lines)
+        
+        # Remove extra whitespace and normalize spacing
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text).strip()
+        
+        # Remove multiple newlines
+        cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text)
+        
+        return cleaned_text
 
     def is_valid_url(self, url: str) -> bool:
-        """Basic URL validation."""
-        return url.startswith(('http://', 'https://'))
-
-def process_message(message):
-    # existing code...
-    
-    # Check if message contains OCR or links
-    has_ocr_or_link = any(
-        text.get('ocr') or text.get('link') 
-        for text in accumulated_message
-    )
-    
-    if not has_ocr_or_link:
-        # Combine all text into a single string
-        combined_text = ' '.join(
-            text.get('text', '') 
-            for text in accumulated_message
-        )
+        """Validate and potentially fix URLs."""
+        # Strip whitespace
+        url = url.strip()
         
-        # Create single audio file for combined text
-        if combined_text:
-            audio_file = text_to_speech(combined_text)
-            audio_files.append(audio_file)
-    else:
-        # Original logic for processing individual messages
-        for text in accumulated_message:
-            if text.get('text'):
-                audio_file = text_to_speech(text['text'])
-                audio_files.append(audio_file)
-    
-    # Rest of the existing code...
+        # Fix common URL issues
+        if url.startswith('www.'):
+            url = 'http://' + url
+        elif not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        
+        # Basic URL pattern validation
+        url_pattern = r'^https?://[^\s/$.?#].[^\s]*$'
+        return bool(re.match(url_pattern, url))

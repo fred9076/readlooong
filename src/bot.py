@@ -4,6 +4,8 @@ import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import os
+import re
+import tempfile
 
 from .config import (
     TOKEN, BOT_USERNAME, MESSAGE_TIMEOUT, 
@@ -22,6 +24,7 @@ class TelegramBot:
         self.ocr_processor = OCRProcessor()
         self.processing_locks = defaultdict(asyncio.Lock)  # Add lock per chat
         self.link_processor = LinkProcessor()
+        self.debug_mode = False  # Add debug mode flag
         self._cleanup_buffers()
 
     def _cleanup_buffers(self):
@@ -47,122 +50,105 @@ class TelegramBot:
         return await file.download_as_bytearray()
 
     async def process_accumulated_messages(self, update: Update, chat_id: int):
+        """Process accumulated messages with improved link handling."""
         if not self.message_buffer[chat_id]:
             return
         
-        # Prevent multiple simultaneous processing for same chat
         async with self.processing_locks[chat_id]:
             try:
                 messages_to_process = self.message_buffer[chat_id].copy()
-                self.message_buffer[chat_id].clear()  # Clear buffer early
+                self.message_buffer[chat_id].clear()
                 
-                # Check if messages contain OCR or links (but not captions)
-                has_ocr_or_link = any(
-                    msg.startswith(('OCR: ', 'Link: '))
-                    for msg in messages_to_process
-                )
-                
-                if not has_ocr_or_link:
-                    # Combine all text and caption messages into one
-                    combined_text = ' '.join(
-                        (msg[8:] if msg.startswith('Caption: ') else msg)
-                        for msg in messages_to_process 
-                        if msg and msg.strip()
-                    )
+                # Process messages based on type
+                for message in messages_to_process:
+                    # Skip empty messages
+                    if not message or not message.strip():
+                        continue
                     
-                    if combined_text:
-                        # Send preview for combined message
-                        preview = combined_text[:1000] + "..." if len(combined_text) > 1000 else combined_text
+                    # Determine message type and extract content
+                    if message.startswith('Link: '):
+                        text = message[6:]  # Remove 'Link: ' prefix
+                        prefix = "🔗 Link content"
+                    elif message.startswith('OCR: '):
+                        text = message[5:]  # Remove 'OCR: ' prefix
+                        prefix = "📸 Image text"
+                    elif message.startswith('Caption: '):
+                        text = message[8:]  # Remove 'Caption: ' prefix
+                        prefix = "📝 Image caption"
+                    else:
+                        text = message
+                        prefix = "📝 Text"
+
+                    if len(text) > MAX_BUFFER_SIZE:
+                        await update.message.reply_text(f"⚠️ Skipping - content too long ({len(text)} characters)")
+                        continue
+
+                    try:
+                        # First, send debug file if in debug mode
+                        if self.debug_mode:
+                            debug_msg = await update.message.reply_text("📝 Preparing debug file...")
+                            try:
+                                # Create and send debug file
+                                with tempfile.NamedTemporaryFile(mode='w+', suffix='.txt', delete=False, encoding='utf-8') as tmp:
+                                    tmp.write(f"{prefix}:\n\n{text}\n\nLength: {len(text)} characters")
+                                    tmp_path = tmp.name
+
+                                await update.message.reply_document(
+                                    document=open(tmp_path, 'rb'),
+                                    filename=f"debug_content_{len(text)}_chars.txt",
+                                    caption=f"{prefix} - {len(text)} characters"
+                                )
+                            finally:
+                                # Clean up
+                                if 'tmp_path' in locals() and os.path.exists(tmp_path):
+                                    os.remove(tmp_path)
+                                await debug_msg.delete()
+
+                        # Then show preview
+                        preview = text[:1000] + "..." if len(text) > 1000 else text
                         await update.message.reply_text(
-                            "📝 Converting combined text to audio:\n\n"
+                            f"{prefix}:\n\n"
                             f"{preview}\n\n"
-                            f"Length: {len(combined_text)} characters"
+                            f"Length: {len(text)} characters"
                         )
-                        
-                        # Send "Converting!!" message
-                        converting_msg = await update.message.reply_text("Converting!! 🎯")
-                        
-                        # Convert and send single audio
+
+                        # Finally convert to audio
+                        converting_msg = await update.message.reply_text("🎯 Converting to audio...")
                         try:
                             success, result = await asyncio.wait_for(
-                                convert_to_audio(combined_text),
+                                convert_to_audio(text),
                                 timeout=MAX_PROCESSING_TIME
                             )
                             
                             if success:
                                 try:
-                                    await update.message.reply_audio(audio=open(result, 'rb'))
+                                    await update.message.reply_audio(
+                                        audio=open(result, 'rb'),
+                                        caption=f"{prefix} converted to audio"
+                                    )
                                 finally:
                                     if os.path.exists(result):
                                         os.remove(result)
-                                    # Delete the "Converting!!" message after completion
                                     await converting_msg.delete()
                             else:
-                                await update.message.reply_text(f"Error converting message: {result}")
+                                await update.message.reply_text(f"❌ Error converting: {result}")
                                 await converting_msg.delete()
                         
                         except asyncio.TimeoutError:
-                            await update.message.reply_text("Message processing took too long, skipping...")
+                            await update.message.reply_text("⏱️ Processing took too long, skipping...")
                             await converting_msg.delete()
-                else:
-                    # Original logic for processing individual messages
-                    for message in messages_to_process:
-                        # Skip empty messages
-                        if not message or not message.strip():
-                            continue
-                            
-                        text = (message[8:] if message.startswith('Caption: ') else
-                                message[5:] if message.startswith('OCR: ') else
-                                message[6:] if message.startswith('Link: ') else
-                                message)
-                        
-                        if len(text) > MAX_BUFFER_SIZE:
-                            await update.message.reply_text(f"Skipping message - too long ({len(text)} characters)")
-                            continue
-                        
-                        try:
-                            preview = text[:1000] + "..." if len(text) > 1000 else text
-                            await update.message.reply_text(
-                                "📝 Converting to audio:\n\n"
-                                f"{preview}\n\n"
-                                f"Length: {len(text)} characters"
-                            )
-                            
-                            # Send "Converting!!" message
-                            converting_msg = await update.message.reply_text("Converting!! 🎯")
-                            
-                            try:
-                                success, result = await asyncio.wait_for(
-                                    convert_to_audio(text), 
-                                    timeout=MAX_PROCESSING_TIME
-                                )
-                                
-                                if success:
-                                    try:
-                                        await update.message.reply_audio(audio=open(result, 'rb'))
-                                    finally:
-                                        if os.path.exists(result):
-                                            os.remove(result)
-                                        # Delete the "Converting!!" message after completion
-                                        await converting_msg.delete()
-                                else:
-                                    await update.message.reply_text(f"Error converting message: {result}")
-                                    await converting_msg.delete()
-                            
-                            except asyncio.TimeoutError:
-                                await update.message.reply_text("Message processing took too long, skipping...")
-                                await converting_msg.delete()
-                                continue
                         except Exception as e:
                             print(f"Error processing message: {str(e)}")
-                            await update.message.reply_text("Error processing this message, skipping...")
-                            if 'converting_msg' in locals():
-                                await converting_msg.delete()
-                            continue
-                        
+                            await update.message.reply_text("❌ Error processing this content")
+                            await converting_msg.delete()
+
+                    except Exception as e:
+                        print(f"Error processing message: {str(e)}")
+                        await update.message.reply_text("❌ Error processing this content")
+
             except Exception as e:
-                print(f"Error processing messages: {str(e)}")
-                await update.message.reply_text("Sorry, there was an error processing your messages.")
+                print(f"Error in process_accumulated_messages: {str(e)}")
+                await update.message.reply_text("❌ Sorry, there was an error processing your messages.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Main message handler for both text and photos."""
@@ -228,42 +214,52 @@ class TelegramBot:
         text = update.message.text
         photo = update.message.photo[-1] if update.message.photo else None
         caption = update.message.caption
-        entities = update.message.entities  # Get message entities
+        entities = update.message.entities
         message_type = update.message.chat.type
         chat_id = update.message.chat.id
 
-        # Check for URL entities first
-        if text and entities and any(entity.type == "url" for entity in entities):
-            # Check if there are any text messages in the buffer
-            has_text_in_buffer = any(
-                not (msg.startswith('OCR: ') or msg.startswith('Link: ') or msg.startswith('Caption: '))
-                for msg in self.message_buffer[chat_id]
-            )
+        # Handle URLs first
+        if text:
+            # Extract URLs from text
+            urls = []
+            if entities:
+                for entity in entities:
+                    if entity.type == "url":
+                        url = text[entity.offset:entity.offset + entity.length]
+                        urls.append(url)
             
-            if has_text_in_buffer:
-                # Skip link processing if there's text in buffer
-                print('Skipping link processing due to text in buffer')
-                return None
-            
-            for entity in entities:
-                if entity.type == "url":
-                    url = text[entity.offset:entity.offset + entity.length]
-                    await update.message.reply_text('Extracting text from link...')
+            # Also try to find URLs in plain text
+            if not urls:
+                url_pattern = r'https?://\S+'
+                import re
+                urls = re.findall(url_pattern, text)
+
+            if urls:
+                combined_text = []
+                for url in urls:
+                    await update.message.reply_text(f'📄 Extracting text from: {url}')
                     link_text = await self.link_processor.process_link(url)
                     if link_text:
-                        return f'Link: {link_text}'
+                        # Don't clean link text, just append it directly
+                        combined_text.append(link_text)
                     else:
-                        await update.message.reply_text("Couldn't extract text from this link.")
-                        return None
+                        await update.message.reply_text("❌ Couldn't extract text from this link.")
+                
+                if combined_text:
+                    # Return link text without additional cleaning
+                    return "Link: " + "\n\n".join(combined_text)
+                return None
 
-        if text:
-            # Handle regular text messages
-            return text.replace(BOT_USERNAME, '').strip() if message_type == 'group' else text
+            # For regular text, apply cleaning
+            cleaned_text = self._clean_text(text.replace(BOT_USERNAME, '').strip()) if message_type == 'group' else self._clean_text(text)
+            return cleaned_text
+
         elif photo:
             if caption:
-                # If photo has caption, use the caption
-                print('Using caption:', caption)
-                return f'Caption: {caption}'
+                # Clean caption text
+                cleaned_caption = self._clean_text(caption)
+                print('Using cleaned caption:', cleaned_caption)
+                return f'Caption: {cleaned_caption}'
             else:
                 # Check if there are any text or caption messages in the buffer
                 has_text_in_buffer = any(
@@ -272,16 +268,28 @@ class TelegramBot:
                 )
                 
                 if has_text_in_buffer:
-                    # Skip OCR if there's any text/caption in buffer
                     print('Skipping OCR due to text/caption in buffer')
                     return None
                 else:
-                    # Only perform OCR if all messages are images without text
                     await update.message.reply_text('Converting image to text...')
                     photo_bytes = await self.download_photo(photo)
                     ocr_text = self.ocr_processor.process_image(photo_bytes)
-                    return f'OCR: {ocr_text}' if ocr_text else None
+                    # Clean OCR text
+                    cleaned_ocr = self._clean_text(ocr_text) if ocr_text else None
+                    return f'OCR: {cleaned_ocr}' if cleaned_ocr else None
         return None
+
+    def _clean_text(self, text: str) -> str:
+        """Clean and format text messages."""
+        if not text:
+            return ""
+        
+        # Remove extra whitespace
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Split into paragraphs
+        paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+        return '\n\n'.join(paragraphs)
 
     async def _delayed_process(self, update: Update, chat_id: int, current_batch_time: datetime):
         await asyncio.sleep(MESSAGE_TIMEOUT)
@@ -292,6 +300,12 @@ class TelegramBot:
         print(f'Update {update} caused error {context.error}')
         await self.link_processor.close()
 
+    async def toggle_debug(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Toggle debug mode on/off."""
+        self.debug_mode = not self.debug_mode
+        status = "enabled" if self.debug_mode else "disabled"
+        await update.message.reply_text(f"Debug mode {status} 🛠")
+
     def run(self):
         """Start the bot."""
         print('Starting bot...')
@@ -300,6 +314,7 @@ class TelegramBot:
         # Initialize handlers
         app.add_handler(CommandHandler('start', self.start_command))
         app.add_handler(CommandHandler('help', self.help_command))
+        app.add_handler(CommandHandler('debug', self.toggle_debug))  # Add debug command
         app.add_handler(MessageHandler(filters.TEXT, self.handle_message))
         app.add_handler(MessageHandler(filters.PHOTO, self.handle_message))
         app.add_error_handler(self.error)
