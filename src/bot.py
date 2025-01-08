@@ -7,6 +7,7 @@ import os
 import re
 import tempfile
 import time
+import logging
 
 from .config import (
     TOKEN, BOT_USERNAME, MESSAGE_TIMEOUT, 
@@ -506,6 +507,56 @@ class TelegramBot:
             hours = seconds // 3600
             minutes = (seconds % 3600) // 60
             return f"{hours} hours {minutes} minutes"
+
+    async def handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """处理照片消息"""
+        try:
+            chat_id = update.effective_chat.id
+            photo_file = await update.message.photo[-1].get_file()
+            photo_bytes = await photo_file.download_as_bytearray()
+            
+            # 直接调用process_image，不需要await
+            text = self.ocr_processor.process_image(photo_bytes)
+            
+            if not text:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Sorry, I couldn't extract any text from this image."
+                )
+                return
+                
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=text
+            )
+            
+        except Exception as e:
+            logger.error(f"Error processing photo: {str(e)}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your photo. Please try again."
+            )
+
+    async def handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """处理文档消息"""
+        try:
+            # ... 其他代码保持不变 ...
+            
+            # 处理PDF页面
+            for page_num, image in enumerate(images, 1):
+                # 直接调用process_pdf_page，不需要await
+                text = self.ocr_processor.process_pdf_page(image)
+                if text:
+                    self.message_buffer[chat_id].append(text)
+                    
+            # ... 其他代码保持不变 ...
+            
+        except Exception as e:
+            logger.error(f"Error processing document: {str(e)}")
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Sorry, there was an error processing your document. Please try again."
+            )
 
     def run(self):
         """Start the bot."""
