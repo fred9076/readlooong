@@ -6,7 +6,7 @@ import logging
 from PIL import Image
 import io
 
-# 添加项目根目录到Python路径
+# Add project root to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
@@ -19,19 +19,19 @@ logger = logging.getLogger(__name__)
 class OCRService:
     def __init__(self):
         try:
-            # 获取当前文件所在目录
+            # Get current directory
             base_path = os.path.join(current_dir, '../OnnxOCR/onnxocr/models')
             
-            # 构建模型路径
+            # Build model paths
             det_path = os.path.join(base_path, 'ppocrv4/det/det.onnx')
             rec_path = os.path.join(base_path, 'ppocrv4/rec/rec.onnx')
             cls_path = os.path.join(base_path, 'ppocrv4/cls/cls.onnx')
             dict_path = os.path.join(base_path, 'ch_ppocr_server_v2.0/ppocr_keys_v1.txt')
             
-            # 检查模型文件
+            # Check model files
             self._check_model_files(det_path, rec_path, cls_path, dict_path)
             
-            # 初始化OnnxOCR模型
+            # Initialize OnnxOCR model
             self.ocr = ONNXPaddleOcr(
                 det_model_dir=det_path,
                 rec_model_dir=rec_path,
@@ -47,7 +47,7 @@ class OCRService:
             raise
 
     def _check_model_files(self, det_path, rec_path, cls_path, dict_path):
-        """检查所有必需的模型文件是否存在"""
+        """Check if all required model files exist"""
         files_to_check = {
             "Detection model": det_path,
             "Recognition model": rec_path,
@@ -61,14 +61,14 @@ class OCRService:
             logger.info(f"{name} found at: {path}")
 
     def _convert_to_cv2_image(self, image_data):
-        """将不同格式的图像数据转换为CV2格式"""
+        """Convert different image formats to CV2 format"""
         try:
             if isinstance(image_data, (bytes, bytearray)):
-                # 处理字节流或字节数组
+                # Handle byte stream or byte array
                 nparr = np.frombuffer(image_data, np.uint8)
                 image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 if image is None:
-                    # 尝试通过PIL处理
+                    # Try processing with PIL
                     try:
                         pil_image = Image.open(io.BytesIO(image_data))
                         image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
@@ -78,24 +78,24 @@ class OCRService:
                 return image
                 
             elif isinstance(image_data, str):
-                # 如果是文件路径
+                # If it's a file path
                 image = cv2.imread(image_data)
                 if image is None:
                     raise ValueError(f"Failed to load image from path: {image_data}")
                 return image
                 
             elif isinstance(image_data, np.ndarray):
-                # 如果已经是numpy数组，确保是正确的格式
-                if len(image_data.shape) == 2:  # 灰度图像
+                # If it's already a numpy array, ensure correct format
+                if len(image_data.shape) == 2:  # Grayscale image
                     image = cv2.cvtColor(image_data, cv2.COLOR_GRAY2BGR)
-                elif len(image_data.shape) == 3 and image_data.shape[2] == 3:  # RGB图像
+                elif len(image_data.shape) == 3 and image_data.shape[2] == 3:  # RGB image
                     image = image_data
                 else:
                     raise ValueError(f"Unsupported numpy array shape: {image_data.shape}")
                 return image
                 
             elif isinstance(image_data, Image.Image):
-                # 如果是PIL图像
+                # If it's a PIL image
                 image = cv2.cvtColor(np.array(image_data), cv2.COLOR_RGB2BGR)
                 return image
                 
@@ -107,23 +107,23 @@ class OCRService:
             raise ValueError(f"Image conversion failed: {str(e)}")
 
     def process_image(self, image_data):
-        """处理图像并返回OCR结果"""
+        """Process image and return OCR results"""
         try:
-            # 转换图像格式
+            # Convert image format
             image = self._convert_to_cv2_image(image_data)
             
-            # 执行OCR识别
+            # Perform OCR recognition
             result = self.ocr.ocr(image)
             
-            # 处理结果
+            # Process results
             if not result or not result[0]:
                 return []
                 
             ocr_results = []
             for line in result[0]:
-                box = line[0]  # 文本框坐标
-                text = line[1][0]  # 识别的文本
-                confidence = line[1][1]  # 置信度
+                box = line[0]  # Text box coordinates
+                text = line[1][0]  # Recognized text
+                confidence = line[1][1]  # Confidence score
                 
                 ocr_results.append({
                     'box': box,

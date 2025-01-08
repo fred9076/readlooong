@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class OCRProcessor:
     def __init__(self):
-        """初始化OCR处理器"""
+        """Initialize OCR processor"""
         try:
             self.ocr_service = OCRService()
             logger.info("OCR processor initialized successfully")
@@ -17,19 +17,19 @@ class OCRProcessor:
             raise
 
     def process_image(self, image_data):
-        """处理图像并返回OCR结果"""
+        """Process image and return OCR results"""
         try:
-            # 处理图像
+            # Process image
             results = self.ocr_service.process_image(image_data)
             
-            # 提取文本
+            # Extract text
             if not results:
                 return ""
                 
-            # 按照y坐标排序，实现自上而下的阅读顺序
+            # Sort results by y-coordinate for top-to-bottom reading order
             sorted_results = sorted(results, key=lambda x: x['box'][0][1])
             
-            # 组合所有文本
+            # Combine all text
             text = '\n'.join(result['text'] for result in sorted_results)
             
             return text
@@ -39,16 +39,16 @@ class OCRProcessor:
             return "Sorry, I couldn't process this image. Please try again with a clearer image."
 
     def process_pdf_page(self, image):
-        """处理PDF页面图像"""
+        """Process PDF page image"""
         try:
-            # 确保图像是numpy数组格式
+            # Ensure image is numpy array
             if isinstance(image, Image.Image):
                 image = np.array(image)
             
-            # 处理图像
+            # Process image
             results = self.ocr_service.process_image(image)
             
-            # 提取并组合文本
+            # Extract and combine text
             if not results:
                 return ""
                 
