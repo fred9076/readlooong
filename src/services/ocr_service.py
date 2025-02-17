@@ -7,7 +7,8 @@ from PIL import Image
 import io
 import easyocr
 
-# Configure logging to output to console
+# The logging configuration might conflict with other parts of the application
+# Move this to the main application initialization
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -23,14 +24,14 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from src.config import USE_EASY_OCR, OCR_LANG
+from src.config import USE_EASY_OCR, OCR_LANG, USE_GPU
 from src.OnnxOCR.onnxocr.onnx_paddleocr import ONNXPaddleOcr
 
 class OCRService:
     def __init__(self):
         try:
             # Initialize PaddleOCR for Chinese
-            base_path = os.path.join(current_dir, '../OnnxOCR/onnxocr/models')
+            base_path = os.path.join(project_root, 'src/OnnxOCR/onnxocr/models')
             det_path = os.path.join(base_path, 'ppocrv4/det/det.onnx')
             rec_path = os.path.join(base_path, 'ppocrv4/rec/rec.onnx')
             cls_path = os.path.join(base_path, 'ppocrv4/cls/cls.onnx')
@@ -44,14 +45,19 @@ class OCRService:
                 cls_model_dir=cls_path,
                 rec_char_dict_path=dict_path,
                 use_angle_cls=True,
-                use_gpu=False
+                use_gpu=USE_GPU
             )
 
             # Initialize EasyOCR for other languages
             if USE_EASY_OCR:
-                self.easy_ocr = easyocr.Reader([OCR_LANG])
+                try:
+                    self.easy_ocr = easyocr.Reader([OCR_LANG], gpu=USE_GPU)
+                    logger.info(f"EasyOCR initialized for language: {OCR_LANG} (GPU: {USE_GPU})")
+                except Exception as e:
+                    logger.error(f"Failed to initialize EasyOCR: {str(e)}")
+                    raise
             
-            logger.info("OCR services initialized successfully")
+            logger.info(f"OCR services initialized successfully (GPU: {USE_GPU})")
             
         except Exception as e:
             logger.error(f"Failed to initialize OCR services: {str(e)}")
@@ -119,6 +125,7 @@ class OCRService:
 
     def process_image(self, image_data):
         """Process image and return OCR results"""
+        image = None
         try:
             # Convert image format
             image = self._convert_to_cv2_image(image_data)
@@ -130,11 +137,12 @@ class OCRService:
                 ocr_results = []
                 for result in results:
                     box, text, confidence = result
-                    ocr_results.append({
-                        'box': box,
-                        'text': text,
-                        'confidence': float(confidence)
-                    })
+                    if confidence > 0.1:  # Filter low confidence results
+                        ocr_results.append({
+                            'box': box,
+                            'text': text,
+                            'confidence': float(confidence)
+                        })
             else:
                 # Use PaddleOCR for Chinese
                 logger.info("Using PaddleOCR for Chinese text")
@@ -148,15 +156,22 @@ class OCRService:
                     text = line[1][0]
                     confidence = line[1][1]
                     
-                    ocr_results.append({
-                        'box': box,
-                        'text': text,
-                        'confidence': float(confidence)
-                    })
+                    if confidence > 0.1:  # Filter low confidence results
+                        ocr_results.append({
+                            'box': box,
+                            'text': text,
+                            'confidence': float(confidence)
+                        })
             
             logger.info(f"Successfully processed image, found {len(ocr_results)} text regions")
             return ocr_results
 
         except Exception as e:
             logger.error(f"Error processing image: {str(e)}")
-            raise 
+            raise
+        finally:
+            # Cleanup
+            if isinstance(image_data, Image.Image):
+                image_data.close()
+            if isinstance(image, np.ndarray):
+                del image 

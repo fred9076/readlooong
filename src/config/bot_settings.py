@@ -1,7 +1,10 @@
 from typing import Final
 import os
+import logging
 from dotenv import load_dotenv
 from .lang_voice import LANG_VOICE_CONFIGS
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -10,9 +13,16 @@ load_dotenv()
 TOKEN: Final = os.getenv('TELEGRAM_BOT_TOKEN')
 BOT_USERNAME: Final = os.getenv('BOT_NAME')
 
-# Get language config
+# Hardware Configuration
+USE_GPU: Final = os.getenv('USE_GPU', 'false').lower() == 'true'
+
+# Get language config with validation
 selected_language = os.getenv('LANGUAGE', 'zh')
-language_config = LANG_VOICE_CONFIGS.get(selected_language, LANG_VOICE_CONFIGS['zh'])
+if selected_language not in LANG_VOICE_CONFIGS:
+    logger.warning(f"Unsupported language {selected_language}, falling back to 'zh'")
+    selected_language = 'zh'
+
+language_config = LANG_VOICE_CONFIGS[selected_language]
 
 LANGUAGE = language_config['language']
 VOICE = language_config['voice']
