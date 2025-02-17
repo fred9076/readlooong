@@ -33,10 +33,11 @@ cd readlooong-bot
 ```bash
 pip install -r requirements.txt
 ```
-
-3. Set up environment variables in `.env`:
+3. create a new bot and get bot token
+    - [Creating a new bot](https://core.telegram.org/bots/features#creating-a-new-bot/)
+4. Set up environment variables in `.env`:   
 ```env
-TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_BOT_TOKEN=your_bot_token  
 BOT_NAME=@your_bot_name
 LANGUAGE=zh  # or 'en' for English
 USE_GPU=false  # Set to 'true' to enable GPU acceleration
