@@ -5,6 +5,18 @@ import numpy as np
 import logging
 from PIL import Image
 import io
+import easyocr
+
+# The logging configuration might conflict with other parts of the application
+# Move this to the main application initialization
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Add project root to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -12,38 +24,43 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
+from src.config import USE_EASY_OCR, OCR_LANG, USE_GPU
 from src.OnnxOCR.onnxocr.onnx_paddleocr import ONNXPaddleOcr
-
-logger = logging.getLogger(__name__)
 
 class OCRService:
     def __init__(self):
         try:
-            # Get current directory
-            base_path = os.path.join(current_dir, '../OnnxOCR/onnxocr/models')
-            
-            # Build model paths
+            # Initialize PaddleOCR for Chinese
+            base_path = os.path.join(project_root, 'src/OnnxOCR/onnxocr/models')
             det_path = os.path.join(base_path, 'ppocrv4/det/det.onnx')
             rec_path = os.path.join(base_path, 'ppocrv4/rec/rec.onnx')
             cls_path = os.path.join(base_path, 'ppocrv4/cls/cls.onnx')
             dict_path = os.path.join(base_path, 'ch_ppocr_server_v2.0/ppocr_keys_v1.txt')
             
-            # Check model files
             self._check_model_files(det_path, rec_path, cls_path, dict_path)
             
-            # Initialize OnnxOCR model
-            self.ocr = ONNXPaddleOcr(
+            self.paddle_ocr = ONNXPaddleOcr(
                 det_model_dir=det_path,
                 rec_model_dir=rec_path,
                 cls_model_dir=cls_path,
                 rec_char_dict_path=dict_path,
                 use_angle_cls=True,
-                use_gpu=False
+                use_gpu=USE_GPU
             )
-            logger.info("OnnxOCR model initialized successfully")
+
+            # Initialize EasyOCR for other languages
+            if USE_EASY_OCR:
+                try:
+                    self.easy_ocr = easyocr.Reader([OCR_LANG], gpu=USE_GPU)
+                    logger.info(f"EasyOCR initialized for language: {OCR_LANG} (GPU: {USE_GPU})")
+                except Exception as e:
+                    logger.error(f"Failed to initialize EasyOCR: {str(e)}")
+                    raise
+            
+            logger.info(f"OCR services initialized successfully (GPU: {USE_GPU})")
             
         except Exception as e:
-            logger.error(f"Failed to initialize OnnxOCR model: {str(e)}")
+            logger.error(f"Failed to initialize OCR services: {str(e)}")
             raise
 
     def _check_model_files(self, det_path, rec_path, cls_path, dict_path):
@@ -108,32 +125,53 @@ class OCRService:
 
     def process_image(self, image_data):
         """Process image and return OCR results"""
+        image = None
         try:
             # Convert image format
             image = self._convert_to_cv2_image(image_data)
             
-            # Perform OCR recognition
-            result = self.ocr.ocr(image)
-            
-            # Process results
-            if not result or not result[0]:
-                return []
-                
-            ocr_results = []
-            for line in result[0]:
-                box = line[0]  # Text box coordinates
-                text = line[1][0]  # Recognized text
-                confidence = line[1][1]  # Confidence score
-                
-                ocr_results.append({
-                    'box': box,
-                    'text': text,
-                    'confidence': float(confidence)
-                })
+            if USE_EASY_OCR:
+                # Use EasyOCR for non-Chinese languages
+                logger.info(f"Using EasyOCR with language: {OCR_LANG}")
+                results = self.easy_ocr.readtext(image)
+                ocr_results = []
+                for result in results:
+                    box, text, confidence = result
+                    if confidence > 0.1:  # Filter low confidence results
+                        ocr_results.append({
+                            'box': box,
+                            'text': text,
+                            'confidence': float(confidence)
+                        })
+            else:
+                # Use PaddleOCR for Chinese
+                logger.info("Using PaddleOCR for Chinese text")
+                result = self.paddle_ocr.ocr(image)
+                if not result or not result[0]:
+                    return []
+                    
+                ocr_results = []
+                for line in result[0]:
+                    box = line[0]
+                    text = line[1][0]
+                    confidence = line[1][1]
+                    
+                    if confidence > 0.1:  # Filter low confidence results
+                        ocr_results.append({
+                            'box': box,
+                            'text': text,
+                            'confidence': float(confidence)
+                        })
             
             logger.info(f"Successfully processed image, found {len(ocr_results)} text regions")
             return ocr_results
 
         except Exception as e:
             logger.error(f"Error processing image: {str(e)}")
-            raise 
+            raise
+        finally:
+            # Cleanup
+            if isinstance(image_data, Image.Image):
+                image_data.close()
+            if isinstance(image, np.ndarray):
+                del image 

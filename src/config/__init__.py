@@ -6,6 +6,8 @@ from .bot_settings import (
     LANGUAGE,
     VOICE,
     OCR_LANG,
+    USE_EASY_OCR,
+    USE_GPU,
     MESSAGE_TIMEOUT,
     MAX_BUFFER_SIZE,
     MAX_PROCESSING_TIME
@@ -17,6 +19,8 @@ __all__ = [
     'LANGUAGE',
     'VOICE',
     'OCR_LANG',
+    'USE_EASY_OCR',
+    'USE_GPU',
     'MESSAGE_TIMEOUT',
     'MAX_BUFFER_SIZE',
     'MAX_PROCESSING_TIME'

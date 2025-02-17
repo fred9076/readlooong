@@ -10,7 +10,7 @@ ocr_service = OCRService()
 @ocr_bp.route('/ocr', methods=['POST'])
 def process_image():
     try:
-        # 检查请求
+        # Check request
         if not request.files:
             return jsonify({
                 'success': False,
@@ -30,7 +30,7 @@ def process_image():
                 'error': 'No selected file'
             }), 400
 
-        # 读取图片数据
+        # Read image data
         try:
             file_bytes = file.read()
             if not file_bytes:
@@ -42,7 +42,7 @@ def process_image():
                 'error': 'Failed to read image file'
             }), 400
         
-        # 处理OCR
+        # Process OCR
         try:
             results = ocr_service.process_image(file_bytes)
         except Exception as e:

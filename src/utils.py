@@ -31,8 +31,24 @@ def is_chinese(text: str) -> bool:
 
 def create_safe_filename(text: str, max_length: int = 50, extension: str = 'mp3') -> str:
     """Create a safe filename from text content."""
-    safe_text = text[:max_length]
-    safe_text = re.sub(r'[^a-zA-Z0-9\s-]', '', safe_text)
-    safe_text = safe_text.strip().replace(' ', '_').lower()
+    if not text:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return f"audio_{timestamp}.{extension}"
+    
+    # Get first line
+    first_line = text.split('\n')[0].strip()
+    safe_text = first_line[:max_length]
+    
+    # Remove invalid filename characters but preserve Chinese
+    safe_text = re.sub(r'[<>:"/\\|?*]', '', safe_text)
+    
+    if is_chinese(safe_text):
+        # For Chinese text, keep original characters
+        safe_text = safe_text[:10]  # Limit Chinese characters
+    else:
+        # For non-Chinese text, normalize and convert to ASCII
+        safe_text = re.sub(r'[^a-zA-Z0-9\s-]', '', safe_text)
+        safe_text = safe_text.strip().replace(' ', '_').lower()
+    
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     return f"{safe_text}_{timestamp}.{extension}" 
