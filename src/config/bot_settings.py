@@ -18,6 +18,9 @@ LANGUAGE = language_config['language']
 VOICE = language_config['voice']
 OCR_LANG = language_config['ocr_lang']
 
+# OCR settings
+USE_EASY_OCR = selected_language != 'zh'  # Use easyOCR for non-Chinese languages
+
 # Message Processing
 MESSAGE_TIMEOUT = 1  # seconds to wait for additional messages
 MAX_BUFFER_SIZE = 400000  # maximum characters in buffer

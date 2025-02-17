@@ -27,4 +27,5 @@ edge-tts>=6.1.9
 yt-dlp>=2023.3.4
 
 # Optional dependencies
-numpy>=1.21.0 
+numpy>=1.21.0
+easyocr>=1.7.1 
