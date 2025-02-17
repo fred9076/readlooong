@@ -5,9 +5,9 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 ## ✨ Features
 
 - 🗣️ Text-to-Speech conversion for multiple languages
-  - 🇨🇳 Chinese (Mandarin)
-  - 🇺🇸 English
-  - 🌐 More languages can be added via configuration
+  - Chinese (Mandarin)
+  - English
+  - More languages can be added via configuration
 - 👀 Advanced OCR (Optical Character Recognition)
   - PaddleOCR for Chinese text
   - EasyOCR for other languages
@@ -27,7 +27,7 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 git clone https://github.com/fred9076/readlooong-bot.git
 cd readlooong-bot
 ```
-2. Install ffmpeg for video processing
+2. Install ffmpeg for video2audio processing
    - macos:
      ```bash
      brew install ffmpeg
@@ -88,6 +88,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Thanks to Microsoft Edge TTS for providing the text-to-speech service
 - Thanks to PaddleOCR team for the excellent OCR engine
+- Thanks to the writer of OnnxOCR to make PaddleOCR much faster 
 - Thanks to EasyOCR team for the multilingual OCR support
 - Thanks to all the open-source libraries that made this project possible
 
