@@ -2,7 +2,7 @@ import os
 import cv2
 import logging
 
-# 设置日志级别
+# Set logging level
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -11,11 +11,11 @@ def test_ocr():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         base_path = os.path.join(current_dir, 'OnnxOCR/onnxocr/models')
         
-        # 打印路径信息
+        # Print path information
         logger.info(f"Current directory: {current_dir}")
         logger.info(f"Base path: {base_path}")
         
-        # 检查模型文件是否存在
+        # Check if model files exist
         det_path = os.path.join(base_path, 'ppocrv4/det/det.onnx')
         rec_path = os.path.join(base_path, 'ppocrv4/rec/rec.onnx')
         cls_path = os.path.join(base_path, 'ppocrv4/cls/cls.onnx')
@@ -29,7 +29,7 @@ def test_ocr():
         
         from OnnxOCR.onnxocr.onnx_paddleocr import ONNXPaddleOcr
         
-        # 初始化模型
+        # Initialize model
         ocr = ONNXPaddleOcr(
             det_model_dir=det_path,
             rec_model_dir=rec_path,
@@ -39,7 +39,7 @@ def test_ocr():
             use_gpu=False
         )
         
-        # 测试图片路径
+        # Test image path
         test_image_path = os.path.join(current_dir, 'OnnxOCR/onnxocr/test_images/1.jpg')
         logger.info(f"Test image exists: {os.path.exists(test_image_path)}")
         

@@ -34,7 +34,7 @@ class TextSystem(object):
 
     def __call__(self, img, cls=True):
         ori_im = img.copy()
-        # 文字检测
+        # Text detection
         dt_boxes = self.text_detector(img)
 
         if dt_boxes is None:
@@ -44,7 +44,7 @@ class TextSystem(object):
 
         dt_boxes = sorted_boxes(dt_boxes)
 
-        # 图片裁剪
+        # Image cropping
         for bno in range(len(dt_boxes)):
             tmp_box = copy.deepcopy(dt_boxes[bno])
             if self.args.det_box_type == "quad":
@@ -53,11 +53,11 @@ class TextSystem(object):
                 img_crop = get_minarea_rect_crop(ori_im, tmp_box)
             img_crop_list.append(img_crop)
 
-        # 方向分类
+        # Direction classification
         if self.use_angle_cls and cls:
             img_crop_list, angle_list = self.text_classifier(img_crop_list)
 
-        # 图像识别
+        # Text recognition
         rec_res = self.text_recognizer(img_crop_list)
 
         if self.args.save_crop_res:

@@ -9,7 +9,7 @@ import sys
 
 class ONNXPaddleOcr(TextSystem):
     def __init__(self, **kwargs):
-        # 默认参数
+        # Default parameters
         parser = init_args()
         inference_args_dict = {}
         for action in parser._actions:
@@ -19,16 +19,16 @@ class ONNXPaddleOcr(TextSystem):
         # params.rec_image_shape = "3, 32, 320"
         params.rec_image_shape = "3, 48, 320"
 
-        # 根据传入的参数覆盖更新默认参数
+        # Update default parameters with provided kwargs
         params.__dict__.update(**kwargs)
 
-        # 初始化模型
+        # Initialize model
         super().__init__(params)
 
     def ocr(self, img, det=True, rec=True, cls=True):
         if cls == True and self.use_angle_cls == False:
             print(
-                "Since the angle classifier is not initialized, the angle classifier will not be uesd during the forward process"
+                "Since the angle classifier is not initialized, the angle classifier will not be used during the forward process"
             )
 
         if det and rec:
