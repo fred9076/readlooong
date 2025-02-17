@@ -27,15 +27,19 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 git clone https://github.com/yourusername/readlooong-bot.git
 cd readlooong-bot
 ```
-
-2. Install dependencies:
+2. Install ffmpeg for video processing
+   - macos:   brew install ffmpeg
+   - ubuntu:  sudo apt update
+              sudo apt install ffmpeg
+   
+3. Create a virtual env and Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-3. create a new bot and get bot token
+4. create a new telegram bot and get bot token
     - [Creating a new bot](https://core.telegram.org/bots/features#creating-a-new-bot/)
 
-4. Set up environment variables in `.env`:   
+5. Set up environment variables in `.env`:   
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token  
 BOT_NAME=@your_bot_name
