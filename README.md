@@ -19,7 +19,6 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 - 🔗 Link text extraction and reading
 - 👥 Supports both private chats and group conversations
 - 📦 Message buffering for processing multiple messages together
-- 🔄 Automatic language detection and voice selection
 
 ## 🚀 Installation
 
@@ -35,6 +34,7 @@ pip install -r requirements.txt
 ```
 3. create a new bot and get bot token
     - [Creating a new bot](https://core.telegram.org/bots/features#creating-a-new-bot/)
+
 4. Set up environment variables in `.env`:   
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token  
@@ -84,5 +84,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 💬 Support
 
-For support, please open an issue in the GitHub repository or contact [@yourusername](https://t.me/yourusername) on Telegram.
+For support, please open an issue in the GitHub repository.
 
