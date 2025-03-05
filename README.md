@@ -21,13 +21,15 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 - 📦 Message buffering for processing multiple messages together
 
 ## Try it 
-Chinese Verison
- https://t.me/readlooong_bot
-![Image caption](/src/assets/bot_QR_zh.png)
+Chinese Verison via
+https://t.me/readlooong_bot or the QR code
+<img src="/src/assets/bot_QR_zh.png" width="50%" height="50%" alt="Descriptive text">
 
-## 🚀 Installation
 
-1. Clone the repository:
+## Or deploy your own bot as follows
+### 🚀 Installation
+
+1. Clone the repository to your PC or server (Linux/Windows/Mac):
 ```bash
 git clone https://github.com/fred9076/readlooong-bot.git
 cd readlooong-bot
@@ -69,6 +71,7 @@ python main.py
    - 🖼️ Images with text (OCR supported)
    - 🔗 URLs to articles or YouTube videos
    - 📄 PDF or EPUB files
+   Or just share these via Share --> Telegram --> Bot
 
 The bot will process the content and send back an 🎵 audio file.
 
