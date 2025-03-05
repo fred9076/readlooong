@@ -20,6 +20,11 @@ ReadLooong is a Telegram bot that converts various content types to speech. It s
 - 👥 Supports both private chats and group conversations
 - 📦 Message buffering for processing multiple messages together
 
+## Try it 
+Chinese Verison
+ https://t.me/readlooong_bot
+![Image caption](/src/assets/bot_QR_zh.png)
+
 ## 🚀 Installation
 
 1. Clone the repository:
