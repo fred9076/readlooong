@@ -51,8 +51,12 @@ BOT_NAME=@your_bot_name
 LANGUAGE=zh  # or 'en' for English
 USE_GPU=false  # Set to 'true' to enable GPU acceleration
 ```
+6. Starting bot on your PC or server
+```bash
+python main.py
+```
 
-## 📖 Usage
+## 📖 Usage on Telegram
 
 1. Start the bot: `/start`
 2. Send any of the following:
